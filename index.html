@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WORD ROGUE // ТАКТИЧЕСКИЙ ТАЙП-РОГАЛИК</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="crt-overlay"></div>
+
+  <div class="rogue-wrapper">
+    <!-- Top Telemetry Header -->
+    <header class="top-header">
+      <div class="game-title">⚡ WORD ROGUE // ТАЙП-СЛЭШЕР</div>
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-label">СКОРОСТЬ:</span>
+          <span id="stat-wpm" class="stat-val" style="color:#00f3ff;">0 WPM</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">ТОЧНОСТЬ:</span>
+          <span id="stat-acc" class="stat-val" style="color:#00ff66;">100%</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">СТРИК:</span>
+          <span id="stat-streak" class="stat-val" style="color:#ff0055;">x0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">ЭТАЖ:</span>
+          <span id="stat-floor" class="stat-val">1/5</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">ЗЕЛЬЯ:</span>
+          <span id="stat-potions" class="stat-val" style="color:#ff007f;">1 [TAB]</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main 60fps Battle Viewport -->
+    <main class="viewport-frame">
+      <canvas id="battle-canvas"></canvas>
+    </main>
+
+    <!-- Bottom Controls & Hints -->
+    <footer class="controls-hud">
+      <span>ПЕЧАТАЙ БУКВЫ БЕЗ РЕГИСТРА И СИМВОЛОВ · [TAB / 1] ЗЕЛЬЕ HP · [1/2/3] ВЫБОР НАГРАДЫ РОГАЛИКА</span>
+      <span>♫ ЗВУК: ЭФИР · [R] РЕСТАРТ</span>
+    </footer>
+  </div>
+
+  <script src="audio.js"></script>
+  <script src="words.js"></script>
+  <script src="perks.js"></script>
+  <script src="game.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      window.rogueInstance = new window.WordRogueGame('battle-canvas');
+    });
+  </script>
+</body>
+</html>
