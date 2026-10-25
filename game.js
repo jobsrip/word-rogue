@@ -1,8 +1,10 @@
 /**
- * WORD ROGUE // Main Game Arena Simulation
- * Pure keyboard input: no case, no punctuation, pure flow.
- * Hero vs Mobs & Giant Bosses, Roguelike draft upgrades,
- * WPM tracker, critical hits, screen shake, and slashing particle arcs.
+ * WORD ROGUE // Main Game Arena Simulation (V2)
+ * Features:
+ * - Dual-layout input (Works seamlessly on Russian AND English keyboard!)
+ * - Visible bottom interactive input box + visual blinking cursor
+ * - Glowing letter feedback
+ * - Visual target line connecting hero to targeted enemy
  */
 
 class WordRogueGame {
@@ -25,7 +27,7 @@ class WordRogueGame {
       maxHp: 100,
       shield: 0,
       maxShield: 0,
-      baseAtk: 20,
+      baseAtk: 22,
       critChance: 0.15,
       lifesteal: 0,
       potions: 1,
@@ -45,13 +47,17 @@ class WordRogueGame {
     this.startTime = null;
     this.score = 0;
 
+    // Current input buffer visualization
+    this.currentBuffer = '';
+    this.lastInputFeedback = '';
+    this.lastInputTimer = 0;
+
     // Battle Entities
     this.enemies = [];
     this.activeEnemy = null; // Currently locked target
     this.lasers = [];
     this.particles = [];
     this.damageNumbers = [];
-    this.slashArcs = [];
     this.screenShake = 0;
 
     this.perkOptions = [];
@@ -71,6 +77,14 @@ class WordRogueGame {
     this.canvas.height = Math.floor(rect.height * dpr);
     this.renderScale = rect.width / this.width;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Translates whatever user typed to both Russian and English matches
+  normalizeChar(rawChar) {
+    const low = rawChar.toLowerCase();
+    const mappedRu = window.KEY_MAP_EN_TO_RU[low] || low;
+    const mappedEn = window.KEY_MAP_RU_TO_EN[low] || low;
+    return { raw: low, ru: mappedRu, en: mappedEn };
   }
 
   initKeyboard() {
@@ -106,27 +120,31 @@ class WordRogueGame {
       // Only battle keys
       if (this.state !== 'BATTLE') return;
 
-      // Extract raw character without case or symbols
-      const rawKey = e.key.toLowerCase();
-      // Only letters (Russian and English support)
-      if (/^[a-zа-яё]$/i.test(rawKey)) {
-        this.handleTyping(rawKey);
+      // Check if letter key
+      if (e.key.length === 1) {
+        const charObj = this.normalizeChar(e.key);
+        this.handleTyping(charObj);
       }
     });
   }
 
-  handleTyping(char) {
+  handleTyping(charObj) {
     this.totalTyped++;
 
-    // 1. If we are currently locked onto an enemy
+    // 1. If currently locked onto an enemy
     if (this.activeEnemy && this.activeEnemy.alive) {
       const nextChar = this.activeEnemy.word[this.activeEnemy.typedIndex];
-      if (char === nextChar) {
+      // Match either direct character or layout-mapped character!
+      if (charObj.raw === nextChar || charObj.ru === nextChar || charObj.en === nextChar) {
         // Correct letter!
         this.activeEnemy.typedIndex++;
         this.correctTyped++;
         this.streak++;
         if (this.streak > this.maxStreak) this.maxStreak = this.streak;
+
+        this.currentBuffer += nextChar;
+        this.lastInputFeedback = 'HIT';
+        this.lastInputTimer = 0.4;
 
         this.audio.keyTap(true);
         this.fireSlashLaser(this.activeEnemy);
@@ -134,23 +152,26 @@ class WordRogueGame {
         // Word completed!
         if (this.activeEnemy.typedIndex >= this.activeEnemy.word.length) {
           this.executeWordAttack(this.activeEnemy);
+          this.currentBuffer = '';
         }
       } else {
-        // Typo!
+        // Typo mistake!
         this.audio.keyTap(false);
         this.streak = 0;
-        this.screenShake = 3;
-        this.addDamageNumber('MISS', this.activeEnemy.x, this.activeEnemy.y - 40, '#ff0055');
+        this.screenShake = 4;
+        this.lastInputFeedback = 'MISS';
+        this.lastInputTimer = 0.4;
+        this.addDamageNumber('ПРОМАХ!', this.activeEnemy.x, this.activeEnemy.y - 40, '#ff0055');
       }
     } else {
-      // 2. Not locked: find first enemy whose upcoming word begins with `char`
+      // 2. Not locked: find enemy whose upcoming word begins with typed char (or layout-mapped char)
       let candidate = null;
-      // Prioritize enemy with lowest attack timer (most dangerous)
       let minAttackTime = 9999;
 
       for (const enemy of this.enemies) {
         if (!enemy.alive) continue;
-        if (enemy.word[0] === char) {
+        const firstLetter = enemy.word[0];
+        if (charObj.raw === firstLetter || charObj.ru === firstLetter || charObj.en === firstLetter) {
           if (enemy.attackTimer < minAttackTime) {
             minAttackTime = enemy.attackTimer;
             candidate = enemy;
@@ -165,16 +186,23 @@ class WordRogueGame {
         this.streak++;
         if (this.streak > this.maxStreak) this.maxStreak = this.streak;
 
+        this.currentBuffer = candidate.word[0];
+        this.lastInputFeedback = 'HIT';
+        this.lastInputTimer = 0.4;
+
         this.audio.keyTap(true);
         this.fireSlashLaser(this.activeEnemy);
 
         if (this.activeEnemy.typedIndex >= this.activeEnemy.word.length) {
           this.executeWordAttack(this.activeEnemy);
+          this.currentBuffer = '';
         }
       } else {
         // No enemy starts with this letter
         this.audio.keyTap(false);
         this.streak = 0;
+        this.lastInputFeedback = 'MISS';
+        this.lastInputTimer = 0.3;
       }
     }
 
@@ -294,12 +322,12 @@ class WordRogueGame {
     this.floor = fl;
     this.state = 'BATTLE';
     this.activeEnemy = null;
+    this.currentBuffer = '';
     this.hero.shield = this.hero.maxShield;
 
     const isBossFloor = (this.floor === this.maxFloor);
 
     if (isBossFloor) {
-      // Epic Giant Boss Floor
       this.enemies = [{
         name: 'ТИТАН БЕЗДНЫ',
         tier: 'boss',
@@ -318,7 +346,6 @@ class WordRogueGame {
         isBoss: true
       }];
     } else {
-      // 2 - 3 Mobs based on floor
       const count = 2 + (this.floor >= 3 ? 1 : 0);
       const enemyNames = ['Горгулья', 'Темный Маг', 'Орк-Палач', 'Призрак Разлома', 'Железный Голем'];
       this.enemies = [];
@@ -349,7 +376,6 @@ class WordRogueGame {
   getWordForEnemy(tier) {
     const bank = window.WORD_BANK.ru;
     const pool = bank[tier] || bank.tier1;
-    // Pick word not already assigned to another living enemy
     const available = pool.filter(w => !this.enemies.some(e => e.alive && e.word === w));
     if (available.length > 0) {
       return available[Math.floor(Math.random() * available.length)];
@@ -362,9 +388,7 @@ class WordRogueGame {
       this.state = 'VICTORY';
       this.audio.levelUp();
     } else {
-      // Open Roguelike Perk Draft
       this.state = 'PERK_SELECTION';
-      // Pick 3 random perks
       const shuffled = [...window.PERKS_POOL].sort(() => 0.5 - Math.random());
       this.perkOptions = shuffled.slice(0, 3);
     }
@@ -386,7 +410,7 @@ class WordRogueGame {
       maxHp: 100,
       shield: 0,
       maxShield: 0,
-      baseAtk: 20,
+      baseAtk: 22,
       critChance: 0.15,
       lifesteal: 0,
       potions: 1,
@@ -410,10 +434,13 @@ class WordRogueGame {
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 25);
     }
+    if (this.lastInputTimer > 0) {
+      this.lastInputTimer -= dt;
+    }
 
     if (this.state !== 'BATTLE') return;
 
-    // Enemy Attack Timers (Turn-timer tension)
+    // Enemy Attack Timers
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
       enemy.attackTimer -= dt;
@@ -483,7 +510,7 @@ class WordRogueGame {
     const w = this.width;
     const h = this.height;
 
-    // Dark Obsidian Backdrop
+    // Dark Obsidian Arena Backdrop
     ctx.fillStyle = '#06050a';
     ctx.fillRect(0, 0, w, h);
 
@@ -503,7 +530,7 @@ class WordRogueGame {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
 
-    // Draw Laser Blade Beams
+    // Laser Blade Beams
     for (const l of this.lasers) {
       ctx.strokeStyle = l.color;
       ctx.lineWidth = 3;
@@ -511,6 +538,18 @@ class WordRogueGame {
       ctx.moveTo(l.x1, l.y1);
       ctx.lineTo(l.x2, l.y2);
       ctx.stroke();
+    }
+
+    // Target laser line from Hero to active enemy
+    if (this.activeEnemy && this.activeEnemy.alive) {
+      ctx.strokeStyle = 'rgba(0, 243, 255, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(180, 280);
+      ctx.lineTo(this.activeEnemy.x, this.activeEnemy.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     // 1. Render Hero on Left
@@ -540,7 +579,10 @@ class WordRogueGame {
 
     ctx.restore();
 
-    // 5. Overlays (Perk Selection / Game Over / Victory)
+    // 5. Bottom Interactive Typing Bar (Shows what player is typing!)
+    this.renderBottomTypingBar(ctx, w, h);
+
+    // 6. Overlays
     if (this.state === 'PERK_SELECTION') {
       this.renderPerkModal(ctx, w, h);
     } else if (this.state === 'GAME_OVER') {
@@ -553,14 +595,14 @@ class WordRogueGame {
   renderHero(ctx) {
     const hx = 180, hy = 280;
 
-    // Glowing platform ring
+    // Platform ring
     ctx.strokeStyle = 'rgba(0, 243, 255, 0.4)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.ellipse(hx, hy + 35, 45, 14, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Shield aura if active
+    // Shield aura
     if (this.hero.shield > 0) {
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
       ctx.lineWidth = 3;
@@ -575,7 +617,7 @@ class WordRogueGame {
     ctx.arc(hx, hy, 26, 0, Math.PI * 2);
     ctx.fill();
 
-    // Glowing Core Eye
+    // Eye
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(hx + 8, hy - 4, 6, 0, Math.PI * 2);
@@ -636,7 +678,7 @@ class WordRogueGame {
     ctx.fillStyle = timerRatio < 0.3 ? '#ff0033' : '#facc15';
     ctx.fillRect(enemy.x - barW / 2, enemy.y - enemy.radius - 11, barW * timerRatio, 3);
 
-    // --- RENDER CLEAN WORD PROMPT ---
+    // --- WORD PROMPT ---
     const word = enemy.word;
     const typedIdx = enemy.typedIndex;
 
@@ -647,7 +689,7 @@ class WordRogueGame {
     ctx.fillStyle = 'rgba(10, 6, 18, 0.9)';
     ctx.fillRect(enemy.x - totalW / 2 - 10, enemy.y + enemy.radius + 16, totalW + 20, 26);
     ctx.strokeStyle = isTargeted ? '#00f3ff' : '#ff0055';
-    ctx.lineWidth = isTargeted ? 2 : 1;
+    ctx.lineWidth = isTargeted ? 2.5 : 1;
     ctx.strokeRect(enemy.x - totalW / 2 - 10, enemy.y + enemy.radius + 16, totalW + 20, 26);
 
     // Draw characters: Typed = Glowing Green, Remaining = Crisp White
@@ -664,6 +706,52 @@ class WordRogueGame {
     const typedW = ctx.measureText(typedStr).width;
     ctx.fillStyle = isTargeted ? '#ffffff' : '#94a3b8';
     ctx.fillText(remStr, drawX + typedW, textY);
+  }
+
+  renderBottomTypingBar(ctx, w, h) {
+    const boxW = 540;
+    const boxH = 46;
+    const boxX = w / 2 - boxW / 2;
+    const boxY = h - 68;
+
+    // Frame
+    ctx.fillStyle = 'rgba(14, 10, 24, 0.95)';
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = this.activeEnemy ? '#00f3ff' : '#2e1d4a';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+    // Keyboard icon / prompt
+    ctx.font = '700 13px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('ВВОД С КЛАВИАТУРЫ:', boxX + 16, boxY + 28);
+
+    // Current word being typed
+    ctx.font = '700 18px "JetBrains Mono", monospace';
+    if (this.activeEnemy && this.activeEnemy.alive) {
+      const fullWord = this.activeEnemy.word;
+      const typed = fullWord.substring(0, this.activeEnemy.typedIndex);
+      const remaining = fullWord.substring(this.activeEnemy.typedIndex);
+
+      let textStartX = boxX + 190;
+      ctx.fillStyle = '#00ff66';
+      ctx.fillText(typed, textStartX, boxY + 29);
+
+      const typedW = ctx.measureText(typed).width;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(remaining, textStartX + typedW, boxY + 29);
+
+      // Blinking cursor
+      if (Math.floor(performance.now() / 400) % 2 === 0) {
+        ctx.fillStyle = '#00f3ff';
+        ctx.fillRect(textStartX + typedW, boxY + 14, 2, 20);
+      }
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.font = '13px "JetBrains Mono", monospace';
+      ctx.fillText('нажимай буквы слова любого врага (RU или EN раскладка)...', boxX + 185, boxY + 28);
+    }
   }
 
   renderPerkModal(ctx, w, h) {
@@ -746,7 +834,7 @@ class WordRogueGame {
     ctx.textAlign = 'center';
     ctx.font = '700 36px "JetBrains Mono", monospace';
     ctx.fillStyle = '#00ff66';
-    ctx.fillText('ТИИТАН ПОВЕРЖЕН // ПОБЕДА!', w / 2, h / 2 - 20);
+    ctx.fillText('ТИТАН ПОВЕРЖЕН // ПОБЕДА!', w / 2, h / 2 - 20);
     ctx.font = '15px "JetBrains Mono", monospace';
     ctx.fillStyle = '#00f3ff';
     ctx.fillText(`РЕКОРДНАЯ СКОРОСТЬ: ${this.wpm} WPM  |  СЧЕТ: ${this.score}`, w / 2, h / 2 + 20);
